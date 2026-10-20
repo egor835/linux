@@ -534,6 +534,19 @@ static const struct clk_smd_rpm *bimc_pcnoc_snoc_cnoc_ocmem_icc_clks[] = {
 	&clk_smd_rpm_ocmemgx_clk,
 };
 
+/*
+ * MSM8226 has no MMSS NoC interconnect driver, but every access to the
+ * multimedia subsystem (MDSS, GPU, camera) needs the MMSS AHB NoC clocked.
+ * Hand it off along with the other buses so it stays on.
+ */
+static const struct clk_smd_rpm *msm8226_icc_clks[] = {
+	&clk_smd_rpm_bimc_clk,
+	&clk_smd_rpm_bus_0_pcnoc_clk,
+	&clk_smd_rpm_bus_1_snoc_clk,
+	&clk_smd_rpm_bus_2_cnoc_clk,
+	&clk_smd_rpm_bus_3_mmssnoc_ahb_clk,
+};
+
 static const struct clk_smd_rpm *msm8996_icc_clks[] = {
 	&clk_smd_rpm_bimc_clk,
 	&clk_smd_rpm_branch_aggre1_noc_clk,
@@ -794,6 +807,14 @@ static const struct rpm_smd_clk_desc rpm_clk_msm8974 = {
 	.num_clks = ARRAY_SIZE(msm8974_clks),
 	.icc_clks = bimc_pcnoc_snoc_cnoc_ocmem_icc_clks,
 	.num_icc_clks = ARRAY_SIZE(bimc_pcnoc_snoc_cnoc_ocmem_icc_clks),
+	.scaling_before_handover = true,
+};
+
+static const struct rpm_smd_clk_desc rpm_clk_msm8226 = {
+	.clks = msm8974_clks,
+	.num_clks = ARRAY_SIZE(msm8974_clks),
+	.icc_clks = msm8226_icc_clks,
+	.num_icc_clks = ARRAY_SIZE(msm8226_icc_clks),
 	.scaling_before_handover = true,
 };
 
@@ -1293,7 +1314,7 @@ static const struct rpm_smd_clk_desc rpm_clk_qcm2290 = {
 
 static const struct of_device_id rpm_smd_clk_match_table[] = {
 	{ .compatible = "qcom,rpmcc-mdm9607", .data = &rpm_clk_mdm9607 },
-	{ .compatible = "qcom,rpmcc-msm8226", .data = &rpm_clk_msm8974 },
+	{ .compatible = "qcom,rpmcc-msm8226", .data = &rpm_clk_msm8226 },
 	{ .compatible = "qcom,rpmcc-msm8909", .data = &rpm_clk_msm8909 },
 	{ .compatible = "qcom,rpmcc-msm8916", .data = &rpm_clk_msm8916 },
 	{ .compatible = "qcom,rpmcc-msm8917", .data = &rpm_clk_msm8917 },
