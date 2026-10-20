@@ -227,10 +227,14 @@ msm_gem_assert_locked(struct drm_gem_object *obj)
 	);
 }
 
-/* imported/exported objects are not purgeable: */
+/*
+ * imported/exported objects are not purgeable, and neither are objects in
+ * the VRAM carveout, which have no shmem backing to drop or swap to:
+ */
 static inline bool is_unpurgeable(struct msm_gem_object *msm_obj)
 {
-	return drm_gem_is_imported(&msm_obj->base) || msm_obj->pin_count;
+	return drm_gem_is_imported(&msm_obj->base) || msm_obj->pin_count ||
+		msm_obj->vram_node;
 }
 
 static inline bool is_purgeable(struct msm_gem_object *msm_obj)
