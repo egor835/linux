@@ -9,3 +9,8 @@
 	compatible = "qcom,msm8926-mss-pil";
 	/delete-property/ qcom,ext-bhs-reg;
 };
+
+&tlmm {
+	compatible = "qcom,msm8926-pinctrl";
+	gpio-ranges = <&tlmm 0 0 121>;
+};
