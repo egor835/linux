@@ -16,7 +16,9 @@
  *  - HF-Buck
  */
 
+#include <linux/devm-helpers.h>
 #include <linux/errno.h>
+#include <linux/iio/consumer.h>
 #include <linux/interrupt.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -37,6 +39,7 @@
 #define SMBB_CHG_VIN_MIN	0x047
 #define SMBB_CHG_CTRL		0x049
 #define CTRL_EN			BIT(7)
+#define CTRL_ON_BAT_FORCE	BIT(0)
 #define SMBB_CHG_VBAT_WEAK	0x052
 #define SMBB_CHG_IBAT_TERM_CHG	0x05b
 #define IBAT_TERM_CHG_IEOC	BIT(7)
@@ -120,6 +123,8 @@ struct smbb_charger {
 	struct power_supply *dc_psy;
 	struct power_supply *bat_psy;
 	struct regmap *regmap;
+	struct iio_channel *vbat_chan;
+	struct delayed_work arb_work;
 
 	struct regulator_desc otg_rdesc;
 	struct regulator_dev *otg_reg;
@@ -438,11 +443,39 @@ static irqreturn_t smbb_chg_done_handler(int irq, void *_data)
 	return IRQ_HANDLED;
 }
 
+/*
+ * Anti reverse boost (ARB): after the charger is unplugged the buck can keep
+ * USBIN up on its own, so USB stays "valid" and the battery reports charging.
+ * The hardware flags this as charger gone; stop charging and run from the
+ * battery for a moment so USBIN collapses if nothing is connected, then
+ * restore charging.
+ */
+#define SMBB_ARB_STOP_MS	1000
+
+static void smbb_arb_stop_work(struct work_struct *work)
+{
+	struct smbb_charger *chg = container_of(work, struct smbb_charger,
+						arb_work.work);
+
+	regmap_update_bits(chg->regmap, chg->addr + SMBB_CHG_CTRL,
+			   CTRL_EN | CTRL_ON_BAT_FORCE, CTRL_EN);
+}
+
 static irqreturn_t smbb_chg_gone_handler(int irq, void *_data)
 {
 	struct smbb_charger *chg = _data;
 
 	smbb_set_line_flag(chg, irq, STATUS_CHG_GONE);
+
+	if ((chg->status & STATUS_CHG_GONE) &&
+	    (chg->status & STATUS_USBIN_VALID)) {
+		dev_dbg(chg->dev, "charger gone while USB valid, stopping ARB\n");
+		regmap_update_bits(chg->regmap, chg->addr + SMBB_CHG_CTRL,
+				   CTRL_EN | CTRL_ON_BAT_FORCE,
+				   CTRL_ON_BAT_FORCE);
+		mod_delayed_work(system_wq, &chg->arb_work,
+				 msecs_to_jiffies(SMBB_ARB_STOP_MS));
+	}
 	power_supply_changed(chg->bat_psy);
 	power_supply_changed(chg->usb_psy);
 	if (!chg->dc_disabled)
@@ -587,6 +620,35 @@ static int smbb_charger_writable_property(struct power_supply *psy,
 	return psp == POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT;
 }
 
+/*
+ * Without a fuel gauge driver, estimate the state of charge from the battery
+ * voltage using the OCV table of the monitored battery. The voltage is not
+ * compensated for the load current, so it reads high while charging.
+ */
+static int smbb_battery_capacity(struct smbb_charger *chg,
+				 struct power_supply *psy,
+				 unsigned long status, int *capacity)
+{
+	int uv, rc;
+
+	if (!psy->battery_info || !psy->battery_info->ocv_table_size[0])
+		return -ENODATA;
+
+	if ((status & STATUS_CHG_DONE) &&
+	    (status & (STATUS_DCIN_VALID | STATUS_USBIN_VALID))) {
+		*capacity = 100;
+		return 0;
+	}
+
+	rc = iio_read_channel_processed(chg->vbat_chan, &uv);
+	if (rc < 0)
+		return rc;
+
+	*capacity = clamp(power_supply_batinfo_ocv2cap(psy->battery_info, uv, 25),
+			  0, 100);
+	return 0;
+}
+
 static int smbb_battery_get_property(struct power_supply *psy,
 		enum power_supply_property psp,
 		union power_supply_propval *val)
@@ -649,6 +711,14 @@ static int smbb_battery_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_VOLTAGE_MIN_DESIGN:
 		val->intval = 3000000; /* single-cell li-ion low end */
 		break;
+	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
+		rc = iio_read_channel_processed(chg->vbat_chan, &val->intval);
+		if (rc > 0)
+			rc = 0;
+		break;
+	case POWER_SUPPLY_PROP_CAPACITY:
+		rc = smbb_battery_capacity(chg, psy, status, &val->intval);
+		break;
 	default:
 		rc = -EINVAL;
 		break;
@@ -708,6 +778,19 @@ static enum power_supply_property smbb_battery_properties[] = {
 	POWER_SUPPLY_PROP_TECHNOLOGY,
 };
 
+static enum power_supply_property smbb_battery_vbat_properties[] = {
+	POWER_SUPPLY_PROP_STATUS,
+	POWER_SUPPLY_PROP_HEALTH,
+	POWER_SUPPLY_PROP_PRESENT,
+	POWER_SUPPLY_PROP_CHARGE_TYPE,
+	POWER_SUPPLY_PROP_CURRENT_MAX,
+	POWER_SUPPLY_PROP_VOLTAGE_MAX,
+	POWER_SUPPLY_PROP_VOLTAGE_MIN_DESIGN,
+	POWER_SUPPLY_PROP_TECHNOLOGY,
+	POWER_SUPPLY_PROP_VOLTAGE_NOW,
+	POWER_SUPPLY_PROP_CAPACITY,
+};
+
 static const struct reg_off_mask_default {
 	unsigned int offset;
 	unsigned int mask;
@@ -741,10 +824,9 @@ static const struct reg_off_mask_default {
 	/* Stop USB enumeration timer */
 	{ SMBB_USB_ENUM_TIMER_STOP, ENUM_TIMER_STOP, ENUM_TIMER_STOP },
 
-#if 0 /* FIXME supposedly only to disable hardware ARB termination */
-	{ SMBB_USB_SEC_ACCESS, SEC_ACCESS_MAGIC },
+	/* Report reverse boost after charger removal as charger gone (ARB) */
+	{ SMBB_USB_SEC_ACCESS, 0xff, SEC_ACCESS_MAGIC },
 	{ SMBB_USB_REV_BST, 0xff, REV_BST_CHG_GONE },
-#endif
 
 	/* Stop USB enumeration timer, again */
 	{ SMBB_USB_ENUM_TIMER_STOP, ENUM_TIMER_STOP, ENUM_TIMER_STOP },
@@ -760,6 +842,17 @@ static const struct power_supply_desc bat_psy_desc = {
 	.type = POWER_SUPPLY_TYPE_BATTERY,
 	.properties = smbb_battery_properties,
 	.num_properties = ARRAY_SIZE(smbb_battery_properties),
+	.get_property = smbb_battery_get_property,
+	.set_property = smbb_battery_set_property,
+	.property_is_writeable = smbb_battery_writable_property,
+};
+
+/* Battery with a voltage sense ADC channel */
+static const struct power_supply_desc bat_vbat_psy_desc = {
+	.name = "smbb-bif",
+	.type = POWER_SUPPLY_TYPE_BATTERY,
+	.properties = smbb_battery_vbat_properties,
+	.num_properties = ARRAY_SIZE(smbb_battery_vbat_properties),
 	.get_property = smbb_battery_get_property,
 	.set_property = smbb_battery_set_property,
 	.property_is_writeable = smbb_battery_writable_property,
@@ -844,6 +937,11 @@ static int smbb_charger_probe(struct platform_device *pdev)
 	chg->dev = &pdev->dev;
 	mutex_init(&chg->statlock);
 
+	rc = devm_delayed_work_autocancel(&pdev->dev, &chg->arb_work,
+					  smbb_arb_stop_work);
+	if (rc)
+		return rc;
+
 	chg->regmap = dev_get_regmap(pdev->dev.parent, NULL);
 	if (!chg->regmap) {
 		dev_err(&pdev->dev, "failed to locate regmap\n");
@@ -879,10 +977,20 @@ static int smbb_charger_probe(struct platform_device *pdev)
 		}
 	}
 
+	chg->vbat_chan = devm_iio_channel_get(&pdev->dev, "vbat");
+	if (IS_ERR(chg->vbat_chan)) {
+		rc = PTR_ERR(chg->vbat_chan);
+		if (rc != -ENODEV)
+			return dev_err_probe(&pdev->dev, rc,
+					     "failed to get vbat channel\n");
+		chg->vbat_chan = NULL;
+	}
+
 	bat_cfg.drv_data = chg;
 	bat_cfg.fwnode = dev_fwnode(&pdev->dev);
 	chg->bat_psy = devm_power_supply_register(&pdev->dev,
-						  &bat_psy_desc,
+						  chg->vbat_chan ? &bat_vbat_psy_desc :
+								   &bat_psy_desc,
 						  &bat_cfg);
 	if (IS_ERR(chg->bat_psy)) {
 		dev_err(&pdev->dev, "failed to register battery\n");
