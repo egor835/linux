@@ -1,0 +1,620 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * LG Wine Smart (vfp): LG-D486, LG-F480S/K/L
+ */
+
+/dts-v1/;
+
+#include "msm8926.dtsi"
+#include "pm8226.dtsi"
+#include <dt-bindings/input/gpio-keys.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/leds/common.h>
+
+/delete-node/ &smem_region;
+
+/ {
+	model = "LG Wine Smart";
+	compatible = "lg,vfp", "qcom,msm8926", "qcom,msm8226";
+	chassis-type = "handset";
+
+	aliases {
+		mmc0 = &sdhc_1; /* SDC1 eMMC slot */
+		mmc1 = &sdhc_2; /* SDC2 SD card slot */
+	};
+
+	gpio-keys {
+		compatible = "gpio-keys";
+
+		pinctrl-0 = <&gpio_keys_default>;
+		pinctrl-names = "default";
+
+		key-volume-up {
+			label = "Volume Up";
+			gpios = <&tlmm 106 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_VOLUMEUP>;
+			debounce-interval = <15>;
+		};
+
+		key-camera {
+			label = "Camera";
+			gpios = <&tlmm 107 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_CAMERA>;
+			debounce-interval = <15>;
+		};
+
+		key-volume-down {
+			label = "Volume Down";
+			gpios = <&tlmm 108 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_VOLUMEDOWN>;
+			debounce-interval = <15>;
+		};
+
+		key-quick-clip {
+			label = "Quick Clip";
+			gpios = <&tlmm 109 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_PROG1>;
+			debounce-interval = <15>;
+		};
+
+		/* BU52061NVX hall sensor: low when the flip is closed */
+		event-flip {
+			label = "Flip";
+			gpios = <&tlmm 4 GPIO_ACTIVE_LOW>;
+			linux,input-type = <EV_SW>;
+			linux,code = <SW_LID>;
+			linux,can-disable;
+			debounce-interval = <150>;
+			wakeup-source;
+		};
+	};
+
+	keypad {
+		compatible = "lge,pp2106-keypad";
+
+		reset-gpios = <&tlmm 116 GPIO_ACTIVE_LOW>;
+		scl-gpios = <&tlmm 117 GPIO_ACTIVE_HIGH>;
+		sda-gpios = <&tlmm 118 GPIO_ACTIVE_HIGH>;
+		irq-gpios = <&tlmm 52 GPIO_ACTIVE_LOW>;
+		/* F480 / prototype boards */
+		legacy-irq-gpios = <&tlmm 115 GPIO_ACTIVE_HIGH>;
+
+		pinctrl-0 = <&keypad_default>;
+		pinctrl-names = "default";
+
+		keypad,num-rows = <6>;
+		keypad,num-columns = <5>;
+		linux,keymap = <
+			MATRIX_KEY(0, 0, KEY_LEFT)
+			MATRIX_KEY(0, 1, KEY_UP)
+			MATRIX_KEY(0, 2, KEY_F3)		/* right soft key */
+			MATRIX_KEY(0, 3, KEY_DOWN)
+			MATRIX_KEY(0, 4, KEY_F1)		/* messages */
+			MATRIX_KEY(1, 0, KEY_ENTER)		/* d-pad center */
+			MATRIX_KEY(1, 1, KEY_RIGHT)
+			MATRIX_KEY(1, 2, KEY_F4)		/* contacts */
+			MATRIX_KEY(1, 3, KEY_BACKSPACE)		/* clear */
+			MATRIX_KEY(1, 4, KEY_SEND)		/* call */
+			MATRIX_KEY(2, 0, KEY_F2)		/* left soft key */
+			MATRIX_KEY(2, 1, KEY_MENU)
+			MATRIX_KEY(2, 2, KEY_3)
+			MATRIX_KEY(2, 3, KEY_2)
+			MATRIX_KEY(2, 4, KEY_1)
+			MATRIX_KEY(3, 0, KEY_BACK)
+			MATRIX_KEY(3, 1, KEY_HOMEPAGE)
+			MATRIX_KEY(3, 2, KEY_6)
+			MATRIX_KEY(3, 3, KEY_5)
+			MATRIX_KEY(3, 4, KEY_4)
+			MATRIX_KEY(4, 2, KEY_9)
+			MATRIX_KEY(4, 3, KEY_8)
+			MATRIX_KEY(4, 4, KEY_7)
+			MATRIX_KEY(5, 2, KEY_NUMERIC_POUND)
+			MATRIX_KEY(5, 3, KEY_0)
+			MATRIX_KEY(5, 4, KEY_NUMERIC_STAR)
+		>;
+	};
+
+	battery: battery {
+		compatible = "simple-battery";
+		/* LG BL-44JH, LG Chem cell; OCV table from the LGE BMS data at 25 C */
+		device-chemistry = "lithium-ion";
+		charge-full-design-microamp-hours = <1700000>;
+		voltage-min-design-microvolt = <3400000>;
+		voltage-max-design-microvolt = <4350000>;
+		ocv-capacity-celsius = <25>;
+		ocv-capacity-table-0 =
+					 <4305000 100>,
+					 <4244000 95>,
+					 <4190000 90>,
+					 <4138000 85>,
+					 <4090000 80>,
+					 <4044000 75>,
+					 <4000000 70>,
+					 <3950000 65>,
+					 <3904000 60>,
+					 <3869000 55>,
+					 <3842000 50>,
+					 <3820000 45>,
+					 <3801000 40>,
+					 <3780000 35>,
+					 <3753000 30>,
+					 <3718000 25>,
+					 <3689000 20>,
+					 <3678000 16>,
+					 <3646000 13>,
+					 <3610000 11>,
+					 <3588000 10>,
+					 <3564000 9>,
+					 <3531000 8>,
+					 <3499000 7>,
+					 <3462000 6>,
+					 <3427000 5>,
+					 <3390000 4>,
+					 <3340000 3>,
+					 <3274000 2>,
+					 <3180000 1>,
+					 <3000000 0>;
+	};
+
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		framebuffer@3200000 {
+			reg = <0x03200000 0x800000>;
+			no-map;
+		};
+
+		smem_region: smem@fa00000 {
+			reg = <0x0fa00000 0x100000>;
+			no-map;
+		};
+
+		unknown@fb00000 {
+			reg = <0x0fb00000 0x280000>;
+			no-map;
+		};
+
+		ramoops@3f000000 {
+			compatible = "ramoops";
+			reg = <0x3f000000 0x100000>;
+			record-size = <0x20000>;
+			console-size = <0x80000>;
+			pmsg-size = <0x20000>;
+			ecc-size = <16>;
+		};
+
+		rmtfs@fd80000 {
+			compatible = "qcom,rmtfs-mem";
+			reg = <0x0fd80000 0x180000>;
+			no-map;
+
+			qcom,client-id = <1>;
+		};
+	};
+};
+
+&mba_region {
+	status = "okay";
+};
+
+&mpss_region {
+	status = "okay";
+};
+
+&blsp1_i2c3 {
+	status = "okay";
+
+	backlight: backlight@38 {
+		compatible = "ti,lm3530-backlight";
+		reg = <0x38>;
+		enable-gpios = <&tlmm 60 GPIO_ACTIVE_HIGH>;
+		default-brightness = <64>;
+	};
+
+	led-controller@32 {
+		compatible = "national,lp5521";
+		reg = <0x32>;
+		clock-mode = /bits/ 8 <1>;
+		enable-gpios = <&tlmm 55 GPIO_ACTIVE_HIGH>;
+
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		multi-led {
+			color = <LED_COLOR_ID_RGB>;
+			function = LED_FUNCTION_STATUS;
+
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			led@0 {
+				reg = <0>;
+				color = <LED_COLOR_ID_RED>;
+				led-cur = /bits/ 8 <18>;
+				max-cur = /bits/ 8 <18>;
+			};
+
+			led@1 {
+				reg = <1>;
+				color = <LED_COLOR_ID_GREEN>;
+				led-cur = /bits/ 8 <7>;
+				max-cur = /bits/ 8 <7>;
+			};
+
+			led@2 {
+				reg = <2>;
+				color = <LED_COLOR_ID_BLUE>;
+				led-cur = /bits/ 8 <8>;
+				max-cur = /bits/ 8 <8>;
+			};
+		};
+	};
+};
+
+&blsp1_i2c5 {
+	status = "okay";
+
+	touchscreen@48 {
+		compatible = "melfas,mms100s";
+		reg = <0x48>;
+
+		interrupts-extended = <&tlmm 17 IRQ_TYPE_EDGE_FALLING>;
+
+		avdd-supply = <&pm8226_l28>;
+		vdd-supply = <&pm8226_lvs1>;
+
+		touchscreen-size-x = <320>;
+		touchscreen-size-y = <480>;
+
+		pinctrl-0 = <&ts_int_default>;
+		pinctrl-names = "default";
+	};
+};
+
+&gpu {
+	status = "okay";
+};
+
+&mdss {
+	/* TZ locks MDSS after a GDSC collapse until this is restored */
+	qcom,restore-sec-cfg-id = <1>;
+
+	status = "okay";
+};
+
+&mdss_dsi0 {
+	vdd-supply = <&pm8226_l15>;
+	vdda-supply = <&pm8226_l4>;
+	vddio-supply = <&pm8226_lvs1>;
+
+	status = "okay";
+
+	panel: panel@0 {
+		compatible = "lg,vfp-panel-tovis";
+		reg = <0>;
+
+		vdd-supply = <&pm8226_l15>;
+		vddio-supply = <&pm8226_lvs1>;
+		backlight = <&backlight>;
+
+		enable-gpios = <&tlmm 111 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&tlmm 25 GPIO_ACTIVE_LOW>;
+
+		/* TE comes in on gpio 24 (mdp_vsync), set up by the bootloader */
+
+		port {
+			panel_in: endpoint {
+				remote-endpoint = <&mdss_dsi0_out>;
+			};
+		};
+	};
+};
+
+&mdss_dsi0_out {
+	remote-endpoint = <&panel_in>;
+	data-lanes = <0>;
+};
+
+&mdss_dsi0_phy {
+	vddio-supply = <&pm8226_l8>;
+
+	status = "okay";
+};
+
+&pm8226_vib {
+	status = "okay";
+};
+
+&pronto {
+	firmware-name = "wcnss.mdt";
+
+	vddmx-supply = <&pm8226_l3>;
+	vddpx-supply = <&pm8226_l6>;
+
+	pinctrl-0 = <&wcnss_pin_a>;
+	pinctrl-names = "default";
+
+	status = "okay";
+
+	iris {
+		compatible = "qcom,wcn3620";
+
+		vddxo-supply = <&pm8226_l10>;
+		vddrfa-supply = <&pm8226_l24>;
+		vddpa-supply = <&pm8226_l16>;
+		vdddig-supply = <&pm8226_l24>;
+	};
+
+	smd-edge {
+		wcnss {
+			status = "okay";
+		};
+	};
+};
+
+&rpm_requests {
+	regulators {
+		compatible = "qcom,rpm-pm8226-regulators";
+
+		pm8226_s3: s3 {
+			regulator-min-microvolt = <1200000>;
+			regulator-max-microvolt = <1350000>;
+		};
+
+		pm8226_s4: s4 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <2200000>;
+		};
+
+		pm8226_s5: s5 {
+			regulator-min-microvolt = <1150000>;
+			regulator-max-microvolt = <1150000>;
+		};
+
+		pm8226_l1: l1 {
+			regulator-min-microvolt = <1225000>;
+			regulator-max-microvolt = <1225000>;
+		};
+
+		pm8226_l2: l2 {
+			regulator-min-microvolt = <1200000>;
+			regulator-max-microvolt = <1200000>;
+		};
+
+		pm8226_l3: l3 {
+			regulator-min-microvolt = <750000>;
+			regulator-max-microvolt = <1337500>;
+		};
+
+		pm8226_l4: l4 {
+			regulator-min-microvolt = <1200000>;
+			regulator-max-microvolt = <1200000>;
+		};
+
+		pm8226_l5: l5 {
+			regulator-min-microvolt = <1200000>;
+			regulator-max-microvolt = <1200000>;
+		};
+
+		pm8226_l6: l6 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+		};
+
+		pm8226_l7: l7 {
+			regulator-min-microvolt = <1850000>;
+			regulator-max-microvolt = <1850000>;
+		};
+
+		pm8226_l8: l8 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+			/*
+			 * Also supplies the SR2 PLL that clocks the CPUs. Turning it
+			 * off with the DSI PHY (its only other user) resets the SoC.
+			 */
+			regulator-always-on;
+		};
+
+		pm8226_l9: l9 {
+			regulator-min-microvolt = <2050000>;
+			regulator-max-microvolt = <2050000>;
+		};
+
+		pm8226_l10: l10 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+		};
+
+		pm8226_l12: l12 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+		};
+
+		pm8226_l14: l14 {
+			regulator-min-microvolt = <2750000>;
+			regulator-max-microvolt = <2750000>;
+		};
+
+		pm8226_l15: l15 {
+			regulator-min-microvolt = <2800000>;
+			regulator-max-microvolt = <2800000>;
+		};
+
+		pm8226_l16: l16 {
+			regulator-min-microvolt = <3000000>;
+			regulator-max-microvolt = <3350000>;
+		};
+
+		pm8226_l17: l17 {
+			regulator-min-microvolt = <2950000>;
+			regulator-max-microvolt = <2950000>;
+		};
+
+		pm8226_l18: l18 {
+			regulator-min-microvolt = <2950000>;
+			regulator-max-microvolt = <2950000>;
+		};
+
+		pm8226_l19: l19 {
+			regulator-min-microvolt = <2850000>;
+			regulator-max-microvolt = <2850000>;
+		};
+
+		pm8226_l20: l20 {
+			regulator-min-microvolt = <3075000>;
+			regulator-max-microvolt = <3075000>;
+		};
+
+		pm8226_l21: l21 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <2950000>;
+			regulator-allow-set-load;
+		};
+
+		pm8226_l22: l22 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <2950000>;
+		};
+
+		pm8226_l23: l23 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+		};
+
+		pm8226_l24: l24 {
+			regulator-min-microvolt = <1300000>;
+			regulator-max-microvolt = <1350000>;
+		};
+
+		pm8226_l25: l25 {
+			regulator-min-microvolt = <1775000>;
+			regulator-max-microvolt = <2125000>;
+		};
+
+		pm8226_l26: l26 {
+			regulator-min-microvolt = <1225000>;
+			regulator-max-microvolt = <1225000>;
+		};
+
+		pm8226_l27: l27 {
+			regulator-min-microvolt = <2050000>;
+			regulator-max-microvolt = <2050000>;
+		};
+
+		pm8226_l28: l28 {
+			regulator-min-microvolt = <2950000>;
+			regulator-max-microvolt = <2950000>;
+		};
+
+		pm8226_lvs1: lvs1 {};
+	};
+};
+
+&sdhc_1 {
+	vmmc-supply = <&pm8226_l17>;
+	vqmmc-supply = <&pm8226_l6>;
+
+	bus-width = <8>;
+	non-removable;
+
+	status = "okay";
+};
+
+&sdhc_2 {
+	vmmc-supply = <&pm8226_l18>;
+	vqmmc-supply = <&pm8226_l21>;
+
+	bus-width = <4>;
+	cd-gpios = <&tlmm 37 GPIO_ACTIVE_HIGH>;
+	/* UHS (SDR104 at 200 MHz) silently corrupts data; stay at 3.3 V high speed */
+	no-1-8-v;
+
+	status = "okay";
+};
+
+&pm8226_vadc {
+	channel@6 {
+		reg = <VADC_VBAT_SNS>;
+		qcom,pre-scaling = <1 3>;
+		label = "vbat_sns";
+	};
+};
+
+&smbb {
+	/* LG limits the 1700 mAh BL-44JH to 900 mA, 4.35 V */
+	qcom,fast-charge-safe-current = <1500000>;
+	qcom,fast-charge-current-limit = <900000>;
+	qcom,fast-charge-safe-voltage = <4360000>;
+	qcom,fast-charge-high-threshold-voltage = <4350000>;
+	qcom,auto-recharge-threshold-voltage = <4300000>;
+	qcom,minimum-input-voltage = <4300000>;
+	/* No charger type detection; the bootloader leaves 100 mA */
+	usb-charge-current-limit = <500000>;
+
+	io-channels = <&pm8226_vadc VADC_VBAT_SNS>;
+	io-channel-names = "vbat";
+	monitored-battery = <&battery>;
+
+	status = "okay";
+};
+
+&tlmm {
+	wcnss_pin_a: wcnss-pin-active-state {
+		pins = "gpio40", "gpio41", "gpio42", "gpio43", "gpio44";
+		function = "wlan";
+		drive-strength = <6>;
+		bias-pull-down;
+	};
+
+	keypad_default: keypad-default-state {
+		irq-pins {
+			pins = "gpio52";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-disable;
+		};
+
+		legacy-irq-pins {
+			pins = "gpio115";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-pull-down;
+		};
+
+		bus-pins {
+			pins = "gpio116", "gpio117", "gpio118";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+
+	ts_int_default: ts-int-default-state {
+		pins = "gpio17";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-pull-up;
+	};
+
+	gpio_keys_default: gpio-keys-default-state {
+		pins = "gpio4", "gpio106", "gpio107", "gpio108", "gpio109";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-pull-up;
+	};
+};
+
+&usb {
+	extcon = <&smbb>;
+	dr_mode = "peripheral";
+	status = "okay";
+};
+
+&usb_hs_phy {
+	extcon = <&smbb>;
+	v1p8-supply = <&pm8226_l10>;
+	v3p3-supply = <&pm8226_l20>;
+};
