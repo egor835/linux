@@ -53,6 +53,7 @@
 #define MMS114_TYPE_TOUCHKEY		2
 
 enum mms_type {
+	TYPE_MMS100S	= 100,
 	TYPE_MMS114	= 114,
 	TYPE_MMS134S	= 134,
 	TYPE_MMS136	= 136,
@@ -234,8 +235,9 @@ static irqreturn_t mms114_interrupt(int irq, void *dev_id)
 	if (packet_size <= 0)
 		goto out;
 
-	/* MMS136 has slightly different event size */
-	if (data->type == TYPE_MMS134S || data->type == TYPE_MMS136)
+	/* MMS100S and MMS136 have slightly different event size */
+	if (data->type == TYPE_MMS100S || data->type == TYPE_MMS134S ||
+	    data->type == TYPE_MMS136)
 		touch_size = packet_size / MMS136_EVENT_SIZE;
 	else
 		touch_size = packet_size / MMS114_EVENT_SIZE;
@@ -294,6 +296,7 @@ static int mms114_get_version(struct mms114_data *data)
 	int error;
 
 	switch (data->type) {
+	case TYPE_MMS100S:
 	case TYPE_MMS345L:
 		error = __mms114_read_reg(data, MMS152_FW_REV, 3, buf);
 		if (error)
@@ -685,6 +688,9 @@ MODULE_DEVICE_TABLE(i2c, mms114_id);
 #ifdef CONFIG_OF
 static const struct of_device_id mms114_dt_match[] = {
 	{
+		.compatible = "melfas,mms100s",
+		.data = (void *)TYPE_MMS100S,
+	}, {
 		.compatible = "melfas,mms114",
 		.data = (void *)TYPE_MMS114,
 	}, {
