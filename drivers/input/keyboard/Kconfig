@@ -528,6 +528,17 @@ config KEYBOARD_PINEPHONE
 	  To compile this driver as a module, choose M here; the
 	  module will be called pinephone-keyboard.
 
+config KEYBOARD_PP2106
+	tristate "PP2106 keypad controller"
+	depends on GPIOLIB && OF
+	select INPUT_MATRIXKMAP
+	help
+	  Say Y here to enable the PP2106 keypad controller found in the
+	  LG Wine Smart (vfp) flip phones.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called pp2106-keypad.
+
 config KEYBOARD_PXA27x
 	tristate "PXA27x/PXA3xx keypad support"
 	depends on PXA27x || PXA3xx || ARCH_MMP || COMPILE_TEST
