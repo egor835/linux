@@ -15,6 +15,7 @@
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/reset.h>
+#include <linux/firmware/qcom/qcom_scm.h>
 
 #include "msm_mdss.h"
 #include "msm_kms.h"
@@ -40,6 +41,9 @@ struct msm_mdss {
 	struct icc_path *mdp_path[2];
 	u32 num_mdp_paths;
 	struct icc_path *reg_bus_path;
+	/* TZ device id whose secure config is lost on MDSS GDSC collapse */
+	u32 sec_cfg_id;
+	bool restore_sec_cfg;
 };
 
 static int msm_mdss_parse_data_bus_icc_path(struct device *dev,
@@ -311,6 +315,18 @@ static int msm_mdss_enable(struct msm_mdss *msm_mdss)
 	}
 
 	/*
+	 * Some MSM8x26 TZ builds lock the MDSS register space after the GDSC
+	 * has been collapsed (any access resets the SoC) until the secure
+	 * configuration is restored. Firmware that left the display running
+	 * hides this, as long as the GDSC is never turned off.
+	 */
+	if (msm_mdss->restore_sec_cfg) {
+		ret = qcom_scm_restore_sec_cfg(msm_mdss->sec_cfg_id, 0);
+		if (ret)
+			dev_warn(msm_mdss->dev, "failed to restore secure config: %d\n", ret);
+	}
+
+	/*
 	 * Register access requires MDSS_MDP_CLK, which is not enabled by the
 	 * mdss on mdp5 hardware. Skip it for now.
 	 */
@@ -472,6 +488,13 @@ static struct msm_mdss *msm_mdss_init(struct platform_device *pdev, bool is_mdp5
 	}
 	msm_mdss->num_clocks = ret;
 	msm_mdss->is_mdp5 = is_mdp5;
+
+	if (!of_property_read_u32(pdev->dev.of_node, "qcom,restore-sec-cfg-id",
+				  &msm_mdss->sec_cfg_id)) {
+		if (!qcom_scm_is_available())
+			return ERR_PTR(-EPROBE_DEFER);
+		msm_mdss->restore_sec_cfg = true;
+	}
 
 	msm_mdss->dev = &pdev->dev;
 
